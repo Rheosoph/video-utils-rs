@@ -736,7 +736,7 @@ impl RunningPipeline {
         // SAFETY: GStreamer is initialized and description is a valid C string.
         let pipeline = unsafe { (library.gst.parse_launch)(description.as_ptr(), &mut error) };
         if !error.is_null() {
-            let message = take_g_error(&library, error);
+            let message = take_g_error(library, error);
             // SAFETY: A non-null partial pipeline must be unreffed on parse errors.
             unsafe {
                 if !pipeline.is_null() {
@@ -760,7 +760,7 @@ impl RunningPipeline {
         // SAFETY: pipeline is a GstPipeline/GstBin returned by gst_parse_launch.
         let sink = unsafe { (library.gst.bin_get_by_name)(pipeline, sink_name.as_ptr()) };
         if src.is_null() || sink.is_null() {
-            unref_pipeline_parts(&library, pipeline, src, sink);
+            unref_pipeline_parts(library, pipeline, src, sink);
             return codec_backend_error(
                 &codec,
                 operation,
@@ -771,7 +771,7 @@ impl RunningPipeline {
         // SAFETY: pipeline is valid and owned by this runner.
         let state = unsafe { (library.gst.element_set_state)(pipeline, GST_STATE_PLAYING) };
         if state == GST_STATE_CHANGE_FAILURE {
-            unref_pipeline_parts(&library, pipeline, src, sink);
+            unref_pipeline_parts(library, pipeline, src, sink);
             return codec_backend_error(
                 &codec,
                 operation,
@@ -949,7 +949,7 @@ fn probe_factories(
 
     let mut installed = Vec::new();
     for factory in factories {
-        if factory_is_installed(&library, factory) {
+        if factory_is_installed(library, factory) {
             installed.push(*factory);
         }
     }
