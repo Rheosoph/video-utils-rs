@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  SHARED_DEFAULT_FEATURES: cli,portable-core
+  SHARED_ALL_FEATURES: cli,portable-core,mp4e-muxer,audio-io,image-io,preview,svg,codec-h264-rust,codec-h265-rust,codec-av1-rust,codec-openh264-ffi
+
+jobs:
+  test:
+    name: Shared tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test shared default features
+        run: cargo test --no-default-features --features "${{ env.SHARED_DEFAULT_FEATURES }}"
+
+      - name: Test shared optional features
+        run: cargo test --no-default-features --features "${{ env.SHARED_ALL_FEATURES }}"
+
+      - name: Test minimal features
+        run: cargo test --no-default-features
+
+  platform:
+    name: Platform adapter tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GStreamer runtime
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgstreamer1.0-0 \
+            libgstreamer-plugins-base1.0-0 \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly \
+            gstreamer1.0-libav
+
+      - name: Test platform adapter integration tests
+        run: cargo test --no-default-features --features platform-codecs --test platform_codecs
+
+      - name: Check platform adapters without portable core
+        run: cargo check --no-default-features --features platform-codecs
+
+  android:
+    name: Android MediaCodec adapter check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Android target
+        run: rustup target add aarch64-linux-android
+
+      - name: Check Android platform adapters
+        run: cargo check --target aarch64-linux-android --no-default-features --features platform-codecs
+
+  rust:
+    name: Rust checks and lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Dependency licenses
+        run: python3 scripts/check_licenses.py
+
+      - name: Check shared optional features
+        run: cargo check --no-default-features --features "${{ env.SHARED_ALL_FEATURES }}"
+
+      - name: Clippy shared optional features
+        run: cargo clippy --all-targets --no-default-features --features "${{ env.SHARED_ALL_FEATURES }}" -- -D warnings
+
+      - name: Clippy platform adapters
+        run: cargo clippy --all-targets --no-default-features --features platform-codecs -- -D warnings
+
+      - name: Clippy minimal features
+        run: cargo clippy --no-default-features --all-targets -- -D warnings
