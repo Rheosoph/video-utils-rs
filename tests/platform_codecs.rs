@@ -6,13 +6,14 @@ use video_utils_rs::{
 #[cfg(feature = "platform-codecs")]
 use video_utils_rs::{
     BackendKind, BackendProbe, BackendSource, CodecDirection, PlatformAudioDecoder,
-    PlatformAudioDecoderConfig, PlatformAudioEncoder, PlatformAudioEncoderConfig,
-    PlatformVideoDecoder, PlatformVideoDecoderConfig, preferred_backend_for_codec,
-    probe_platform_codec, recommended_backends_for_current_target,
+    PlatformAudioDecoderConfig, PlatformVideoDecoder, PlatformVideoDecoderConfig,
+    preferred_backend_for_codec, probe_platform_codec, recommended_backends_for_current_target,
 };
 
 #[cfg(all(feature = "platform-codecs", target_os = "macos"))]
-use video_utils_rs::{AudioDecoder, AudioEncoder, AudioFrame};
+use video_utils_rs::{
+    AudioDecoder, AudioEncoder, AudioFrame, PlatformAudioEncoder, PlatformAudioEncoderConfig,
+};
 
 #[cfg(all(
     feature = "platform-codecs",

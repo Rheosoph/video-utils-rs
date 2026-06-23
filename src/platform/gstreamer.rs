@@ -898,13 +898,8 @@ impl RunningPipeline {
         }
         set_buffer_timing(buffer, timing);
 
-        // SAFETY: appsrc is valid and takes its own reference to the buffer.
+        // SAFETY: appsrc is valid and takes ownership of the buffer.
         let flow = unsafe { (self.library.app.app_src_push_buffer)(self.src, buffer) };
-        // SAFETY: Release the caller's original buffer reference. appsrc keeps
-        // its queued reference after a successful push.
-        unsafe {
-            (self.library.gst.mini_object_unref)(buffer);
-        }
         if flow != GST_FLOW_OK {
             return codec_backend_error(
                 &self.codec,

@@ -47,8 +47,8 @@ Scope: `src/platform/apple.rs`, `src/platform/android.rs`,
 - Android H.264/H.265 decoder configuration now converts MP4-style
   `avcC`/`hvcC` extradata into documented `csd-*` buffers with Annex B
   start codes.
-- GStreamer `appsrc` buffer pushes now release the caller's original
-  `GstBuffer` reference after `appsrc` takes its queued reference.
+- GStreamer `appsrc` buffer pushes now hand off the caller's original
+  `GstBuffer` reference because `gst_app_src_push_buffer` takes ownership.
 - GStreamer input buffers now set explicit `GstBuffer` PTS/duration and pulled
   samples feed their PTS/duration back into packet/audio-frame timestamps.
 - Windows Media Foundation now drains and preserves output when
