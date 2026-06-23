@@ -8,7 +8,14 @@ pub mod raw_rgba;
 pub mod subtitle_text;
 pub mod unsupported;
 
-#[cfg(any(feature = "codec-h264-rust", feature = "codec-h265-rust"))]
+#[cfg(any(
+    feature = "codec-h264-rust",
+    feature = "codec-h265-rust",
+    all(
+        any(feature = "platform-codecs", feature = "codec-windows"),
+        target_os = "windows"
+    )
+))]
 pub(crate) mod yuv420;
 
 #[cfg(feature = "codec-av1-rust")]

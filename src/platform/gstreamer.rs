@@ -677,13 +677,13 @@ impl ElementHandle {
     }
 }
 
-fn ensure_session<F>(
-    slot: &mut Option<RunningPipeline>,
+fn ensure_session<'a, F>(
+    slot: &'a mut Option<RunningPipeline>,
     library: Rc<GstLibrary>,
     codec: CodecId,
     operation: &'static str,
     build_pipeline: F,
-) -> Result<&RunningPipeline>
+) -> Result<&'a RunningPipeline>
 where
     F: FnOnce() -> Result<String>,
 {

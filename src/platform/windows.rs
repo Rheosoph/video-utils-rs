@@ -9,6 +9,7 @@ use crate::{
         aac::aac_packet_to_raw, h264::h264_packet_to_annex_b, h265::h265_packet_to_annex_b,
     },
     codec::{CodecDirection, CodecId},
+    codecs::yuv420::{nv12_8_to_rgba, rgba_to_nv12},
     error::{Error, Result},
     frame::RgbaFrame,
     packet::EncodedPacket,
@@ -26,6 +27,8 @@ const DEFAULT_TRACK_ID: u32 = 1;
 const HNS_DEN: i32 = 10_000_000;
 const DEFAULT_AUDIO_OUTPUT_BYTES: u32 = 1_048_576;
 const DEFAULT_COMPRESSED_OUTPUT_BYTES: u32 = 1_048_576;
+const MIN_DEFAULT_VIDEO_BITRATE: u32 = 1_000_000;
+const MAX_DEFAULT_VIDEO_BITRATE: u32 = 50_000_000;
 
 pub struct TransformHandle {
     codec: CodecId,
@@ -182,7 +185,7 @@ impl TransformHandle {
         outputs.extend(self.drain_output_bytes()?);
         outputs
             .into_iter()
-            .map(|output| rgb32_frame_from_windows_output(output, width, height, &self.codec))
+            .map(|output| nv12_frame_from_windows_output(output, width, height, &self.codec))
             .collect()
     }
 
@@ -217,7 +220,7 @@ impl TransformHandle {
             );
         }
 
-        let input = rgba_to_rgb32_bytes(frame);
+        let input = rgba_to_nv12(frame);
         let pts_hns = time_base.rescale(pts, hns_time_base()?);
         let duration_hns = time_base.rescale(frame_duration.max(0), hns_time_base()?);
         let mut outputs = self.process_input(&input, pts_hns, duration_hns)?;
@@ -307,7 +310,7 @@ impl TransformHandle {
         self.drain_transform()?;
         self.drain_output_bytes()?
             .into_iter()
-            .map(|output| rgb32_frame_from_windows_output(output, width, height, &self.codec))
+            .map(|output| nv12_frame_from_windows_output(output, width, height, &self.codec))
             .collect()
     }
 
@@ -546,7 +549,7 @@ fn configure_transform(
             )?,
             video_media_type(
                 codec,
-                &MFVideoFormat_RGB32,
+                &MFVideoFormat_NV12,
                 width,
                 height,
                 time_base,
@@ -565,7 +568,7 @@ fn configure_transform(
         ) => (
             video_media_type(
                 codec,
-                &MFVideoFormat_RGB32,
+                &MFVideoFormat_NV12,
                 width,
                 height,
                 time_base,
@@ -579,7 +582,9 @@ fn configure_transform(
                 height,
                 time_base,
                 frame_duration,
-                bitrate,
+                Some(bitrate.unwrap_or_else(|| {
+                    default_video_bitrate(width, height, time_base, frame_duration)
+                })),
             )?,
         ),
         (
@@ -659,6 +664,15 @@ fn video_media_type(
             .map_err(|error| mf_error(codec, "set Media Foundation pixel aspect ratio", error))?;
         ty.SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)
             .map_err(|error| mf_error(codec, "set Media Foundation interlace mode", error))?;
+        if *subtype == MFVideoFormat_NV12 {
+            ty.SetUINT32(&MF_MT_DEFAULT_STRIDE, width)
+                .map_err(|error| mf_error(codec, "set Media Foundation default stride", error))?;
+            ty.SetUINT32(
+                &MF_MT_SAMPLE_SIZE,
+                nv12_output_capacity(codec, width, height, "set Media Foundation sample size")?,
+            )
+            .map_err(|error| mf_error(codec, "set Media Foundation sample size", error))?;
+        }
         if frame_duration > 0 {
             let seconds = time_base.ticks_to_seconds(frame_duration);
             if seconds.is_finite() && seconds > 0.0 {
@@ -921,7 +935,12 @@ fn output_stream_info(
 fn fallback_output_capacity(direction: CodecDirection, shape: TransformShape) -> Result<u32> {
     match (direction, shape) {
         (CodecDirection::Decode, TransformShape::Video { width, height, .. }) => {
-            video_output_capacity(width, height)
+            nv12_output_capacity(
+                &CodecId::RawVideo,
+                width,
+                height,
+                "allocate Media Foundation video output",
+            )
         }
         (CodecDirection::Decode, TransformShape::Audio { .. }) => Ok(DEFAULT_AUDIO_OUTPUT_BYTES),
         (CodecDirection::Encode, TransformShape::Video { .. })
@@ -1021,30 +1040,17 @@ fn encoded_audio_input(codec: &CodecId, packet: &EncodedPacket) -> Result<bytes:
     }
 }
 
-fn rgb32_frame_from_windows_output(
+fn nv12_frame_from_windows_output(
     output: OutputBytes,
     width: u32,
     height: u32,
     codec: &CodecId,
 ) -> Result<RgbaFrame> {
-    let row_bytes = width as usize * 4;
-    let expected = row_bytes * height as usize;
-    if output.bytes.len() < expected {
-        return codec_backend_error(
-            codec,
-            "decode Media Foundation video packet",
-            format!(
-                "decoded RGB32 output has {} bytes, expected at least {expected}",
-                output.bytes.len()
-            ),
-        );
-    }
-
-    let mut rgba = Vec::with_capacity(expected);
-    for bgra in output.bytes[..expected].chunks_exact(4) {
-        rgba.extend_from_slice(&[bgra[2], bgra[1], bgra[0], bgra[3]]);
-    }
-    RgbaFrame::new(width, height, row_bytes, rgba)
+    nv12_8_to_rgba(width, height, &output.bytes).map_err(|error| Error::CodecBackend {
+        codec: codec.clone(),
+        operation: "decode Media Foundation video packet",
+        message: error.to_string(),
+    })
 }
 
 fn audio_frame_from_windows_output(
@@ -1096,18 +1102,6 @@ fn encoded_packets_from_outputs(
         .collect())
 }
 
-fn rgba_to_rgb32_bytes(frame: &RgbaFrame) -> Vec<u8> {
-    let row_bytes = frame.width as usize * 4;
-    let mut out = Vec::with_capacity(row_bytes * frame.height as usize);
-    for row in 0..frame.height as usize {
-        let offset = row * frame.stride;
-        for rgba in frame.data[offset..offset + row_bytes].chunks_exact(4) {
-            out.extend_from_slice(&[rgba[2], rgba[1], rgba[0], rgba[3]]);
-        }
-    }
-    out
-}
-
 fn f32le_audio_bytes(samples: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 4);
     for sample in samples {
@@ -1116,15 +1110,39 @@ fn f32le_audio_bytes(samples: &[f32]) -> Vec<u8> {
     out
 }
 
-fn video_output_capacity(width: u32, height: u32) -> Result<u32> {
-    width
-        .checked_mul(height)
-        .and_then(|pixels| pixels.checked_mul(4))
+fn nv12_output_capacity(
+    codec: &CodecId,
+    width: u32,
+    height: u32,
+    operation: &'static str,
+) -> Result<u32> {
+    let luma = width.checked_mul(height);
+    let chroma = width
+        .div_ceil(2)
+        .checked_mul(height.div_ceil(2))
+        .and_then(|samples| samples.checked_mul(2));
+    luma.and_then(|luma| chroma.and_then(|chroma| luma.checked_add(chroma)))
         .ok_or(Error::CodecBackend {
-            codec: CodecId::RawVideo,
-            operation: "allocate Media Foundation video output",
+            codec: codec.clone(),
+            operation,
             message: "video frame dimensions overflow output buffer size".to_owned(),
         })
+}
+
+fn default_video_bitrate(width: u32, height: u32, time_base: TimeBase, frame_duration: i64) -> u32 {
+    let fps = if frame_duration > 0 {
+        let seconds = time_base.ticks_to_seconds(frame_duration);
+        if seconds.is_finite() && seconds > 0.0 {
+            (1.0 / seconds).clamp(1.0, 240.0)
+        } else {
+            30.0
+        }
+    } else {
+        30.0
+    };
+    let pixels_per_second = f64::from(width) * f64::from(height) * fps;
+    let bitrate = (pixels_per_second * 0.15).round() as u32;
+    bitrate.clamp(MIN_DEFAULT_VIDEO_BITRATE, MAX_DEFAULT_VIDEO_BITRATE)
 }
 
 fn pack_u32_pair(hi: u32, lo: u32) -> u64 {
