@@ -18,9 +18,8 @@ use bytes::Bytes;
 use std::{
     collections::VecDeque,
     ffi::{CStr, CString, c_char, c_int, c_void},
-    ptr,
-    rc::Rc,
-    slice,
+    ptr, slice,
+    sync::OnceLock,
 };
 
 const RTLD_NOW: c_int = 2;
@@ -30,14 +29,9 @@ const GST_STATE_CHANGE_FAILURE: c_int = 0;
 const GST_FLOW_OK: c_int = 0;
 const GST_MAP_READ: c_int = 1;
 const GST_SECOND: u64 = 1_000_000_000;
-const GST_CLOCK_TIME_NONE: u64 = u64::MAX;
 const PULL_TIMEOUT: u64 = 5 * GST_SECOND;
 const LIVE_PULL_TIMEOUT: u64 = 250_000_000;
 const DEFAULT_TRACK_ID: u32 = 1;
-const GST_TIME_BASE: TimeBase = TimeBase {
-    num: 1,
-    den: 1_000_000_000,
-};
 
 #[link(name = "dl")]
 unsafe extern "C" {
@@ -63,28 +57,6 @@ struct GstMapInfo {
     maxsize: usize,
     user_data: [*mut c_void; 4],
     reserved: [*mut c_void; 4],
-}
-
-#[repr(C)]
-struct GstMiniObjectHeader {
-    type_: usize,
-    refcount: c_int,
-    lockstate: c_int,
-    flags: u32,
-    copy: *mut c_void,
-    dispose: *mut c_void,
-    free: *mut c_void,
-}
-
-#[repr(C)]
-struct GstBufferHeader {
-    mini_object: GstMiniObjectHeader,
-    pool: *mut c_void,
-    pts: u64,
-    dts: u64,
-    duration: u64,
-    offset: u64,
-    offset_end: u64,
 }
 
 type GErrorFree = unsafe extern "C" fn(*mut GError);
@@ -136,30 +108,19 @@ struct GstAppSymbols {
 }
 
 struct GstLibrary {
-    gst_handle: *mut c_void,
-    app_handle: *mut c_void,
-    glib_handle: *mut c_void,
+    _gst_handle: *mut c_void,
+    _app_handle: *mut c_void,
+    _glib_handle: *mut c_void,
     g_error_free: GErrorFree,
     gst: GstSymbols,
     app: GstAppSymbols,
 }
 
-impl Drop for GstLibrary {
-    fn drop(&mut self) {
-        // SAFETY: These handles are owned by this struct and were returned by dlopen.
-        unsafe {
-            if !self.app_handle.is_null() {
-                let _ = dlclose(self.app_handle);
-            }
-            if !self.gst_handle.is_null() {
-                let _ = dlclose(self.gst_handle);
-            }
-            if !self.glib_handle.is_null() {
-                let _ = dlclose(self.glib_handle);
-            }
-        }
-    }
-}
+// SAFETY: The loaded handles and function pointers are immutable after
+// initialization. GStreamer itself owns the synchronization for its global
+// runtime and element operations.
+unsafe impl Send for GstLibrary {}
+unsafe impl Sync for GstLibrary {}
 
 enum ElementRole {
     VideoDecoder {
@@ -197,11 +158,11 @@ pub struct ElementHandle {
     codec: CodecId,
     direction: CodecDirection,
     role: ElementRole,
-    library: Rc<GstLibrary>,
+    library: &'static GstLibrary,
 }
 
 struct RunningPipeline {
-    library: Rc<GstLibrary>,
+    library: &'static GstLibrary,
     codec: CodecId,
     operation: &'static str,
     pipeline: *mut c_void,
@@ -215,14 +176,6 @@ struct RawSample {
     height: Option<u32>,
     sample_rate: Option<u32>,
     channels: Option<u16>,
-    pts_ns: Option<u64>,
-    duration_ns: Option<u64>,
-}
-
-#[derive(Clone, Copy)]
-struct BufferTiming {
-    pts_ns: Option<u64>,
-    duration_ns: Option<u64>,
 }
 
 impl Drop for RunningPipeline {
@@ -257,13 +210,13 @@ pub fn probe(codec: &CodecId, direction: CodecDirection) -> PlatformCodecProbe {
 }
 
 pub fn open_video_decoder(config: &PlatformVideoDecoderConfig) -> Result<ElementHandle> {
-    let library = Rc::new(open_checked_library(
+    let library = open_checked_library(
         &config.codec,
         CodecDirection::Decode,
         "open GStreamer video decoder",
-    )?);
+    )?;
     let _ = select_installed_factory(
-        &library,
+        library,
         &config.codec,
         CodecDirection::Decode,
         "open GStreamer video decoder",
@@ -283,13 +236,13 @@ pub fn open_video_decoder(config: &PlatformVideoDecoderConfig) -> Result<Element
 }
 
 pub fn open_video_encoder(config: &PlatformVideoEncoderConfig) -> Result<ElementHandle> {
-    let library = Rc::new(open_checked_library(
+    let library = open_checked_library(
         &config.codec,
         CodecDirection::Encode,
         "open GStreamer video encoder",
-    )?);
+    )?;
     let factory = select_installed_factory(
-        &library,
+        library,
         &config.codec,
         CodecDirection::Encode,
         "open GStreamer video encoder",
@@ -312,13 +265,13 @@ pub fn open_video_encoder(config: &PlatformVideoEncoderConfig) -> Result<Element
 }
 
 pub fn open_audio_decoder(config: &PlatformAudioDecoderConfig) -> Result<ElementHandle> {
-    let library = Rc::new(open_checked_library(
+    let library = open_checked_library(
         &config.codec,
         CodecDirection::Decode,
         "open GStreamer audio decoder",
-    )?);
+    )?;
     let _ = select_installed_factory(
-        &library,
+        library,
         &config.codec,
         CodecDirection::Decode,
         "open GStreamer audio decoder",
@@ -339,13 +292,13 @@ pub fn open_audio_decoder(config: &PlatformAudioDecoderConfig) -> Result<Element
 }
 
 pub fn open_audio_encoder(config: &PlatformAudioEncoderConfig) -> Result<ElementHandle> {
-    let library = Rc::new(open_checked_library(
+    let library = open_checked_library(
         &config.codec,
         CodecDirection::Encode,
         "open GStreamer audio encoder",
-    )?);
+    )?;
     let factory = select_installed_factory(
-        &library,
+        library,
         &config.codec,
         CodecDirection::Encode,
         "open GStreamer audio encoder",
@@ -369,7 +322,7 @@ impl ElementHandle {
     pub fn decode_video_packet(&mut self, packet: &EncodedPacket) -> Result<Vec<RgbaFrame>> {
         debug_assert_eq!(self.direction, CodecDirection::Decode);
         let codec = self.codec.clone();
-        let library = Rc::clone(&self.library);
+        let library = self.library;
         let ElementRole::VideoDecoder {
             width,
             height,
@@ -394,7 +347,7 @@ impl ElementHandle {
             "decode GStreamer video packet",
             || video_decode_pipeline(&codec),
         )?;
-        let samples = session.push_and_pull(&input, packet_timing(packet), LIVE_PULL_TIMEOUT)?;
+        let samples = session.push_and_pull(&input, LIVE_PULL_TIMEOUT)?;
         samples
             .into_iter()
             .map(|sample| raw_sample_to_rgba_frame(sample, width, height, &codec))
@@ -408,7 +361,7 @@ impl ElementHandle {
         pts: i64,
     ) -> Result<Vec<EncodedPacket>> {
         debug_assert_eq!(self.direction, CodecDirection::Encode);
-        let library = Rc::clone(&self.library);
+        let library = self.library;
         let ElementRole::VideoEncoder {
             width,
             height,
@@ -450,11 +403,7 @@ impl ElementHandle {
             || video_encode_pipeline(codec, width, height, time_base, frame_duration, factory),
         )?;
         pending_pts.push_back(pts);
-        let samples = session.push_and_pull(
-            &input,
-            timing_from_parts(time_base, pts, frame_duration),
-            LIVE_PULL_TIMEOUT,
-        )?;
+        let samples = session.push_and_pull(&input, LIVE_PULL_TIMEOUT)?;
         Ok(video_packets_from_samples(
             codec,
             samples,
@@ -468,7 +417,7 @@ impl ElementHandle {
     pub fn decode_audio_packet(&mut self, packet: &EncodedPacket) -> Result<Vec<AudioFrame>> {
         debug_assert_eq!(self.direction, CodecDirection::Decode);
         let codec = self.codec.clone();
-        let library = Rc::clone(&self.library);
+        let library = self.library;
         let ElementRole::AudioDecoder {
             sample_rate,
             channels,
@@ -495,7 +444,7 @@ impl ElementHandle {
             || audio_decode_pipeline(&codec),
         )?;
         pending_pts.push_back(packet.pts);
-        let samples = session.push_and_pull(&input, packet_timing(packet), LIVE_PULL_TIMEOUT)?;
+        let samples = session.push_and_pull(&input, LIVE_PULL_TIMEOUT)?;
         audio_frames_from_samples(
             samples,
             sample_rate,
@@ -513,7 +462,7 @@ impl ElementHandle {
         frame: &AudioFrame,
     ) -> Result<Vec<EncodedPacket>> {
         debug_assert_eq!(self.direction, CodecDirection::Encode);
-        let library = Rc::clone(&self.library);
+        let library = self.library;
         let ElementRole::AudioEncoder {
             sample_rate,
             channels,
@@ -556,11 +505,7 @@ impl ElementHandle {
             || audio_encode_pipeline(codec, sample_rate, channels, factory),
         )?;
         pending_ranges.push_back((frame.pts, duration, time_base));
-        let samples = session.push_and_pull(
-            &input,
-            timing_from_parts(time_base, frame.pts, duration),
-            LIVE_PULL_TIMEOUT,
-        )?;
+        let samples = session.push_and_pull(&input, LIVE_PULL_TIMEOUT)?;
         Ok(audio_packets_from_samples(
             codec,
             samples,
@@ -679,7 +624,7 @@ impl ElementHandle {
 
 fn ensure_session<'a, F>(
     slot: &'a mut Option<RunningPipeline>,
-    library: Rc<GstLibrary>,
+    library: &'static GstLibrary,
     codec: CodecId,
     operation: &'static str,
     build_pipeline: F,
@@ -706,15 +651,8 @@ fn video_packets_from_samples(
     samples
         .into_iter()
         .map(|sample| {
-            let fallback_pts = pending_pts.pop_front().unwrap_or(next_fallback_pts);
-            let pts = sample
-                .pts_ns
-                .and_then(|pts| gst_ns_to_ticks(pts, time_base))
-                .unwrap_or(fallback_pts);
-            let duration = sample
-                .duration_ns
-                .and_then(|duration| gst_ns_to_ticks(duration, time_base))
-                .unwrap_or(frame_duration);
+            let pts = pending_pts.pop_front().unwrap_or(next_fallback_pts);
+            let duration = frame_duration;
             next_fallback_pts = pts + duration;
             EncodedPacket::new(
                 DEFAULT_TRACK_ID,
@@ -770,14 +708,6 @@ fn audio_packets_from_samples(
                 fallback_duration,
                 fallback_time_base,
             ));
-            let pts = sample
-                .pts_ns
-                .and_then(|pts| gst_ns_to_ticks(pts, time_base))
-                .unwrap_or(pts);
-            let duration = sample
-                .duration_ns
-                .and_then(|duration| gst_ns_to_ticks(duration, time_base))
-                .unwrap_or(duration);
             EncodedPacket::new(
                 DEFAULT_TRACK_ID,
                 codec.clone(),
@@ -792,7 +722,7 @@ fn audio_packets_from_samples(
 
 impl RunningPipeline {
     fn new(
-        library: Rc<GstLibrary>,
+        library: &'static GstLibrary,
         codec: CodecId,
         operation: &'static str,
         description: &str,
@@ -859,17 +789,12 @@ impl RunningPipeline {
         })
     }
 
-    fn push_and_pull(
-        &self,
-        data: &[u8],
-        timing: BufferTiming,
-        timeout_ns: u64,
-    ) -> Result<Vec<RawSample>> {
-        self.push_buffer(data, timing)?;
+    fn push_and_pull(&self, data: &[u8], timeout_ns: u64) -> Result<Vec<RawSample>> {
+        self.push_buffer(data)?;
         self.pull_samples_timeout(timeout_ns)
     }
 
-    fn push_buffer(&self, data: &[u8], timing: BufferTiming) -> Result<()> {
+    fn push_buffer(&self, data: &[u8]) -> Result<()> {
         // SAFETY: The allocation request is valid; GStreamer owns the returned buffer.
         let buffer = unsafe {
             (self.library.gst.buffer_new_allocate)(ptr::null_mut(), data.len(), ptr::null_mut())
@@ -896,7 +821,6 @@ impl RunningPipeline {
                 format!("gst_buffer_fill wrote {written} of {} bytes", data.len()),
             );
         }
-        set_buffer_timing(buffer, timing);
 
         // SAFETY: appsrc is valid and takes ownership of the buffer.
         let flow = unsafe { (self.library.app.app_src_push_buffer)(self.src, buffer) };
@@ -961,7 +885,6 @@ impl RunningPipeline {
             .sample_int(caps, "channels")
             .and_then(nonnegative_u32)
             .and_then(|value| u16::try_from(value).ok());
-        let (pts_ns, duration_ns) = buffer_timing(buffer);
 
         let mut map = GstMapInfo {
             memory: ptr::null_mut(),
@@ -995,8 +918,6 @@ impl RunningPipeline {
             height,
             sample_rate,
             channels,
-            pts_ns,
-            duration_ns,
         })
     }
 
@@ -1050,7 +971,7 @@ fn open_checked_library(
     codec: &CodecId,
     direction: CodecDirection,
     operation: &'static str,
-) -> Result<GstLibrary> {
+) -> Result<&'static GstLibrary> {
     factories_for(codec, direction).ok_or_else(|| Error::CodecBackend {
         codec: codec.clone(),
         operation,
@@ -1104,7 +1025,16 @@ fn factory_is_installed(library: &GstLibrary, factory: &str) -> bool {
     }
 }
 
-fn open_library() -> std::result::Result<GstLibrary, String> {
+fn open_library() -> std::result::Result<&'static GstLibrary, String> {
+    static GST_LIBRARY: OnceLock<std::result::Result<GstLibrary, String>> = OnceLock::new();
+
+    match GST_LIBRARY.get_or_init(open_library_once) {
+        Ok(library) => Ok(library),
+        Err(message) => Err(message.clone()),
+    }
+}
+
+fn open_library_once() -> std::result::Result<GstLibrary, String> {
     let glib_handle = open_dynamic_library("libglib-2.0.so.0")?;
     let gst_handle = match open_dynamic_library("libgstreamer-1.0.so.0") {
         Ok(handle) => handle,
@@ -1152,9 +1082,9 @@ fn open_library() -> std::result::Result<GstLibrary, String> {
     }
 
     Ok(GstLibrary {
-        gst_handle,
-        app_handle,
-        glib_handle,
+        _gst_handle: gst_handle,
+        _app_handle: app_handle,
+        _glib_handle: glib_handle,
         g_error_free,
         gst,
         app,
@@ -1440,10 +1370,7 @@ fn raw_sample_to_audio_frame(
         1,
         i32_from_u32(sample_rate, codec, "decode GStreamer audio packet")?,
     )?;
-    let pts = sample
-        .pts_ns
-        .and_then(|pts| gst_ns_to_ticks(pts, sample_time_base))
-        .unwrap_or_else(|| input_time_base.rescale(input_pts, sample_time_base));
+    let pts = input_time_base.rescale(input_pts, sample_time_base);
     AudioFrame::new(sample_rate, channels, pts, samples)
 }
 
@@ -1478,63 +1405,6 @@ fn framerate_fraction(time_base: TimeBase, frame_duration: i64) -> (i32, i32) {
         .filter(|den| *den > 0)
         .map(|den| (time_base.den, den))
         .unwrap_or((30, 1))
-}
-
-fn packet_timing(packet: &EncodedPacket) -> BufferTiming {
-    timing_from_parts(packet.time_base, packet.pts, packet.duration)
-}
-
-fn timing_from_parts(time_base: TimeBase, pts: i64, duration: i64) -> BufferTiming {
-    BufferTiming {
-        pts_ns: ticks_to_gst_ns(time_base, pts),
-        duration_ns: (duration > 0)
-            .then(|| ticks_to_gst_ns(time_base, duration))
-            .flatten(),
-    }
-}
-
-fn ticks_to_gst_ns(time_base: TimeBase, ticks: i64) -> Option<u64> {
-    let ns = time_base.rescale(ticks, GST_TIME_BASE);
-    u64::try_from(ns)
-        .ok()
-        .filter(|value| *value != GST_CLOCK_TIME_NONE)
-}
-
-fn gst_ns_to_ticks(ns: u64, time_base: TimeBase) -> Option<i64> {
-    let ns = i64::try_from(ns).ok()?;
-    Some(GST_TIME_BASE.rescale(ns, time_base))
-}
-
-fn set_buffer_timing(buffer: *mut c_void, timing: BufferTiming) {
-    if buffer.is_null() {
-        return;
-    }
-    // SAFETY: GstBuffer is a public C struct. The newly allocated buffer is
-    // writable until it is handed to appsrc, so updating the timing fields is
-    // equivalent to GStreamer's GST_BUFFER_PTS/DURATION macros.
-    unsafe {
-        let buffer = &mut *buffer.cast::<GstBufferHeader>();
-        buffer.pts = timing.pts_ns.unwrap_or(GST_CLOCK_TIME_NONE);
-        buffer.dts = GST_CLOCK_TIME_NONE;
-        buffer.duration = timing.duration_ns.unwrap_or(GST_CLOCK_TIME_NONE);
-    }
-}
-
-fn buffer_timing(buffer: *mut c_void) -> (Option<u64>, Option<u64>) {
-    if buffer.is_null() {
-        return (None, None);
-    }
-    // SAFETY: sample_get_buffer returned a live GstBuffer for the duration of
-    // sample processing. Reading public timing fields mirrors the GST_BUFFER_*
-    // macros.
-    unsafe {
-        let buffer = &*buffer.cast::<GstBufferHeader>();
-        (known_gst_time(buffer.pts), known_gst_time(buffer.duration))
-    }
-}
-
-fn known_gst_time(value: u64) -> Option<u64> {
-    (value != GST_CLOCK_TIME_NONE).then_some(value)
 }
 
 fn optional_bytes(data: &[u8]) -> Option<Bytes> {
