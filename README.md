@@ -103,7 +103,7 @@ assert_eq!(output.width, 320);
 Object-store remux planning:
 
 ```rust
-use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
+use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path};
 use video_utils_rs::{
     CodecId, ContainerFormat, MediaInfo, MediaType, StreamInfo, TimeBase,
     plan_object_remux,

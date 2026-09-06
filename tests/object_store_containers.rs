@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use futures::executor::block_on;
-use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
+use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path};
 use video_utils_rs::{
     CodecId, ContainerFormat, Error, MediaInfo, MediaType, ObjectChunkReadOptions,
     ObjectRemuxOperation, RemuxAction, StreamInfo, TimeBase, copy_object_between_stores,

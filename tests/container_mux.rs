@@ -3,7 +3,7 @@
 use bytes::Bytes;
 use futures::executor::block_on;
 use muxide::api::{MuxerBuilder, VideoCodec};
-use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
+use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path};
 use video_utils_rs::{
     CodecId, ContainerFormat, MediaType, ObjectRemuxOperation, demux_iso_bmff_bytes, demux_object,
     mux_iso_bmff_bytes, mux_object, read_object_bytes, remux_object_same_store,

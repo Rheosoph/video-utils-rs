@@ -8,7 +8,7 @@ use std::{
 };
 
 use futures::executor::block_on;
-use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path as ObjectPath};
+use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path as ObjectPath};
 use video_utils_rs::{
     CodecId, ContainerFormat, MediaType, ObjectRemuxOperation, demux_object, mux_object,
     read_object_bytes, remux_object_same_store,

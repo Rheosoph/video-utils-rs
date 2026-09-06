@@ -49,7 +49,7 @@ impl Default for ObjectTranscodeJob {
 /// Operation selected by a high-level transcode/remux job.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ObjectTranscodeOperation {
-    /// Same-store object copy via [`object_store::ObjectStore::copy`].
+    /// Same-store object copy via [`object_store::ObjectStoreExt::copy`].
     SameStoreCopy,
     /// Cross-store byte transfer via object-store get/put.
     CrossStoreByteCopy,

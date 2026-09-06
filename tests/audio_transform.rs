@@ -1,7 +1,7 @@
 #![cfg(feature = "containers")]
 
 use futures::executor::block_on;
-use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
+use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path};
 #[cfg(feature = "audio-io")]
 use video_utils_rs::transform_object_audio_file_to_wav_same_store;
 use video_utils_rs::{

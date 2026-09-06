@@ -3,7 +3,7 @@
 mod support;
 
 use futures::executor::block_on;
-use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path as ObjectPath};
+use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path as ObjectPath};
 use support::{FfmpegFixture, path_str};
 use video_utils_rs::{
     CodecId, ContainerFormat, Error, MediaInfo, MediaType, ObjectRemuxOperation, demux_object,

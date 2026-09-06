@@ -13,7 +13,7 @@ use crate::{
     media::MediaInfo,
 };
 use bytes::Bytes;
-use object_store::{ObjectStore, PutPayload, PutResult, path::Path};
+use object_store::{ObjectStore, ObjectStoreExt, PutPayload, PutResult, path::Path};
 use std::ops::Range;
 
 const HEADER_PROBE_BYTES: u64 = 64;
@@ -68,9 +68,9 @@ pub struct ObjectReadChunk {
 /// Operation used by a remux helper.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ObjectRemuxOperation {
-    /// Same-store object copy via [`ObjectStore::copy`].
+    /// Same-store object copy via [`ObjectStoreExt::copy`].
     SameStoreCopy,
-    /// Cross-store byte transfer via [`ObjectStore::get`] and [`ObjectStore::put`].
+    /// Cross-store byte transfer via [`ObjectStoreExt::get`] and [`ObjectStoreExt::put`].
     CrossStoreByteCopy,
     /// Same-store demux plus packet-copy mux into a different container.
     SameStorePacketCopyMux,
@@ -212,7 +212,7 @@ pub async fn detect_object_container_format(
 
 /// Copy an object inside one object store.
 ///
-/// This uses [`ObjectStore::copy`] and does not read through local files.
+/// This uses [`ObjectStoreExt::copy`] and does not read through local files.
 pub async fn copy_object_same_store(
     store: &dyn ObjectStore,
     source: &Path,

@@ -2,7 +2,7 @@
 
 use bytes::Bytes;
 use futures::executor::block_on;
-use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
+use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path};
 use video_utils_rs::{
     AudioFrame, CodecId, ContainerFormat, EncodedPacket, MediaInfo, MediaType, PcmEncoding,
     StreamInfo, TimeBase, decode_pcm_packet, demux_object, demux_ogg_bytes, demux_wav_bytes,

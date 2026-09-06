@@ -12,7 +12,7 @@ The repository also includes a CI-friendly guard:
 python3 scripts/check_licenses.py
 ```
 
-Last checked: 2026-06-19.
+Last checked: 2026-09-06.
 
 ## Recommendation
 
@@ -66,7 +66,7 @@ This is not legal advice; re-run the audit before publishing a release.
 | `matroska-demuxer` | 0.7.0 | Zlib OR MIT OR Apache-2.0 |
 | `mp4e` | 1.0.5 | MIT |
 | `muxide` | 0.2.5 | MIT OR Apache-2.0 |
-| `object_store` | 0.12.5 | MIT/Apache-2.0 |
+| `object_store` | 0.13.2 | MIT/Apache-2.0 |
 | `png` | 0.18.1 | MIT OR Apache-2.0 |
 | `rav1e` | 0.8.1 | BSD-2-Clause |
 | `ravif` | 0.13.0 | BSD-3-Clause |
@@ -92,7 +92,7 @@ This is not legal advice; re-run the audit before publishing a release.
 | 1 | `Apache-2.0 / MIT` |
 | 1 | `Apache-2.0 AND ISC` |
 | 1 | `Apache-2.0 OR BSL-1.0` |
-| 4 | `Apache-2.0 OR ISC OR MIT` |
+| 3 | `Apache-2.0 OR ISC OR MIT` |
 | 18 | `Apache-2.0 OR MIT` |
 | 3 | `Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT` |
 | 4 | `BSD-2-Clause` |
@@ -102,8 +102,8 @@ This is not legal advice; re-run the audit before publishing a release.
 | 1 | `CC0-1.0 OR Apache-2.0` |
 | 2 | `ISC` |
 | 66 | `MIT` |
-| 172 | `MIT OR Apache-2.0` |
-| 1 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
+| 183 | `MIT OR Apache-2.0` |
+| 2 | `MIT OR Apache-2.0 OR LGPL-2.1-or-later` |
 | 4 | `MIT OR Apache-2.0 OR Zlib` |
 | 1 | `MIT OR Zlib OR Apache-2.0` |
 | 21 | `MIT/Apache-2.0` |
@@ -120,5 +120,5 @@ This is not legal advice; re-run the audit before publishing a release.
 | Crate | Version | License | Notes |
 | --- | ---: | --- | --- |
 | `symphonia` and component crates | 0.5.5 | MPL-2.0 | Optional via `audio-io`; file-level weak copyleft for that dependency. |
-| `r-efi` | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | Permissive branch is available. |
+| `r-efi` | 5.3.0, 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | Permissive branch is available. |
 | `libfuzzer-sys` | 0.4.12 | (MIT OR Apache-2.0) AND NCSA | Compatible; transitive tooling/fuzzing surface. |

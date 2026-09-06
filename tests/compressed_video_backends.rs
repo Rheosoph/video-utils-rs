@@ -115,7 +115,7 @@ fn rav1e_av1_encoder_outputs_muxable_webm_packets() {
 fn object_store_transform_can_encode_raw_rgba_to_av1_webm() {
     use bytes::Bytes;
     use futures::executor::block_on;
-    use object_store::{ObjectStore, PutPayload, memory::InMemory, path::Path};
+    use object_store::{ObjectStoreExt, PutPayload, memory::InMemory, path::Path};
     use video_utils_rs::{
         ColorFilter, ContainerFormat, FrameTransform, FrameTransformPipeline, MediaInfo, MediaType,
         Rav1eAv1Encoder, RawRgbaVideoDecoder, StreamInfo, demux_matroska_bytes, mux_matroska_bytes,
